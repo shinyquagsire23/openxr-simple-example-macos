@@ -1282,13 +1282,13 @@ main_loop(xr_example* self)
 		bool hand_locations_valid[HAND_COUNT];
 
 		for (int i = 0; i < HAND_COUNT; i++) {
-			XrActionStatePose pose_state = {.type = XR_TYPE_ACTION_STATE_POSE, .next = NULL};
+			XrActionStatePose hand_pose_state = {.type = XR_TYPE_ACTION_STATE_POSE, .next = NULL};
 			{
 				XrActionStateGetInfo get_info = {.type = XR_TYPE_ACTION_STATE_GET_INFO,
 				                                 .next = NULL,
 				                                 .action = pose_action,
 				                                 .subactionPath = self->hand_paths[i]};
-				result = xrGetActionStatePose(self->session, &get_info, &pose_state);
+				result = xrGetActionStatePose(self->session, &get_info, &hand_pose_state);
 				xr_result(self->instance, result, "failed to get pose value!");
 			}
 			// printf("Hand pose %d active: %d\n", i, poseState.isActive);
@@ -1552,6 +1552,11 @@ main_loop(xr_example* self)
 			submittedLayers[submitted_layer_count++] =
 			    (const XrCompositionLayerBaseHeader* const) & cylinder_layer;
 		};
+
+		if ((view_state.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT) == 0) {
+			printf("Not submitting layers because orientation is invalid\n");
+			submitted_layer_count = 0;
+		}
 
 		XrFrameEndInfo frameEndInfo = {.type = XR_TYPE_FRAME_END_INFO,
 		                               .displayTime = frameState.predictedDisplayTime,
