@@ -1601,8 +1601,8 @@ cleanup(xr_example* self)
 		}
 		if (self->hand_tracking.trackers[HAND_RIGHT]) {
 			result = pfnDestroyHandTrackerEXT(self->hand_tracking.trackers[HAND_RIGHT]);
-			if (xr_result(self->instance, result, "Failed to destroy left hand tracker")) {
-				printf("Destroyed hand tracker for left hand\n");
+			if (xr_result(self->instance, result, "Failed to destroy right hand tracker")) {
+				printf("Destroyed hand tracker for right hand\n");
 			}
 		}
 	}

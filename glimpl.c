@@ -348,8 +348,32 @@ render_frame(int w,
 			glUniform3f(color, 0.5, 1.0, 0.5);
 		}
 
-		// draw blocks for controller locations if hand tracking is not available
-		if (!joint_locations[hand].isActive) {
+
+		bool joints_drawn = false;
+
+		if (joint_locations[hand].isActive) {
+			for (uint32_t i = 0; i < joint_locations[hand].jointCount; i++) {
+				struct XrHandJointLocationEXT* joint_location = &joint_locations[hand].jointLocations[i];
+
+				if (!(joint_location->locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT)) {
+					continue;
+				}
+
+				float size = joint_location->radius;
+
+				XrVector3f scale = {.x = size, .y = size, .z = size};
+				XrMatrix4x4f joint_matrix;
+				XrMatrix4x4f_CreateModelMatrix(&joint_matrix, &joint_location->pose.position,
+				                               &joint_location->pose.orientation, &scale);
+				glUniformMatrix4fv(modelLoc, 1, GL_FALSE, (float*)joint_matrix.m);
+				glDrawArrays(GL_TRIANGLES, 0, 36);
+				joints_drawn = true;
+			}
+		}
+
+		// if hand tracking is not available or all joint poses were invalid,
+		// draw a block at the controller pose
+		if (!joint_locations[hand].isActive || !joints_drawn) {
 
 			if (!hand_locations_valid[hand])
 				continue;
@@ -362,23 +386,6 @@ render_frame(int w,
 
 			glDrawArrays(GL_TRIANGLES, 0, 36);
 			continue;
-		}
-
-		for (uint32_t i = 0; i < joint_locations[hand].jointCount; i++) {
-			struct XrHandJointLocationEXT* joint_location = &joint_locations[hand].jointLocations[i];
-
-			if (!(joint_location->locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT)) {
-				continue;
-			}
-
-			float size = joint_location->radius;
-
-			XrVector3f scale = {.x = size, .y = size, .z = size};
-			XrMatrix4x4f joint_matrix;
-			XrMatrix4x4f_CreateModelMatrix(&joint_matrix, &joint_location->pose.position,
-			                               &joint_location->pose.orientation, &scale);
-			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, (float*)joint_matrix.m);
-			glDrawArrays(GL_TRIANGLES, 0, 36);
 		}
 	}
 
