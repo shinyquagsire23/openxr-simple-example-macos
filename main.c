@@ -21,6 +21,9 @@
 
 #include <SDL2/SDL_events.h>
 
+// use optional XrSpaceVelocity in xrLocateSpace for controllers and visualize linear velocity
+const bool query_hand_velocities = true;
+
 // we need an identity pose for creating spaces without offsets
 static XrPosef identity_pose = {.orientation = {.x = 0, .y = 0, .z = 0, .w = 1.0},
                                 .position = {.x = 0, .y = 0, .z = 0}};
@@ -1279,6 +1282,10 @@ main_loop(xr_example* self)
 		XrActionStateFloat grab_value[HAND_COUNT];
 		XrActionStateFloat throttle_value[HAND_COUNT];
 		XrSpaceLocation hand_locations[HAND_COUNT];
+
+		// optional
+		XrSpaceVelocity hand_velocities[HAND_COUNT];
+
 		bool hand_locations_valid[HAND_COUNT];
 
 		for (int i = 0; i < HAND_COUNT; i++) {
@@ -1295,6 +1302,13 @@ main_loop(xr_example* self)
 
 			hand_locations[i].type = XR_TYPE_SPACE_LOCATION;
 			hand_locations[i].next = NULL;
+
+			if (query_hand_velocities) {
+				// optional
+				hand_locations[i].next = &hand_velocities[i];
+				hand_velocities[i].type = XR_TYPE_SPACE_VELOCITY;
+				hand_velocities[i].next = NULL;
+			}
 
 			result = xrLocateSpace(pose_action_spaces[i], self->play_space,
 			                       frameState.predictedDisplayTime, &hand_locations[i]);

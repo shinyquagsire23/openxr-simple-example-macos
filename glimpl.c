@@ -218,34 +218,6 @@ init_gl()
 }
 
 void
-render_cube(
-    vec3_t position, float scale, float rotation, float* view_matrix, float* projection_matrix)
-{
-
-	mat4_t modelmatrix = m4_mul(m4_translation(position), m4_scaling(vec3(scale, scale, scale)));
-
-	mat4_t rotationmatrix = m4_rotation_y(degreesToRadians(rotation));
-	modelmatrix = m4_mul(modelmatrix, rotationmatrix);
-
-	glUseProgram(shaderProgramID);
-	glBindVertexArray(VAOs[0]);
-
-
-	int color = glGetUniformLocation(shaderProgramID, "uniformColor");
-	// the color (0, 0, 0) will get replaced by some UV color in the shader
-	glUniform3f(color, 0.0, 0.0, 0.0);
-
-	int viewLoc = glGetUniformLocation(shaderProgramID, "view");
-	glUniformMatrix4fv(viewLoc, 1, GL_FALSE, view_matrix);
-	int projLoc = glGetUniformLocation(shaderProgramID, "proj");
-	glUniformMatrix4fv(projLoc, 1, GL_FALSE, projection_matrix);
-
-	int modelLoc = glGetUniformLocation(shaderProgramID, "model");
-	glUniformMatrix4fv(modelLoc, 1, GL_FALSE, (float*)modelmatrix.m);
-	glDrawArrays(GL_TRIANGLES, 0, 36);
-}
-
-void
 render_quad(int w,
             int h,
             int64_t swapchain_format,
@@ -288,6 +260,72 @@ render_quad(int w,
 	free(rgb);
 }
 
+static void
+render_block(XrVector3f* position, XrQuaternionf* orientation, XrVector3f* radi, int modelLoc)
+{
+	XrMatrix4x4f model_matrix;
+	XrMatrix4x4f_CreateModelMatrix(&model_matrix, position, orientation, radi);
+	glUniformMatrix4fv(modelLoc, 1, GL_FALSE, (float*)model_matrix.m);
+	glDrawArrays(GL_TRIANGLES, 0, 36);
+}
+
+static void
+render_cube(XrVector3f* position, XrQuaternionf* orientation, float cube_size, int modelLoc)
+{
+	XrVector3f s = {cube_size / 2., cube_size / 2., cube_size / 2.};
+	render_block(position, orientation, &s, modelLoc);
+}
+
+void
+render_rotated_cube(
+    vec3_t position, float cube_size, float rotation, float* projection_matrix, int modelLoc)
+{
+	mat4_t rotationmatrix = m4_rotation_y(degreesToRadians(rotation));
+	mat4_t modelmatrix = m4_mul(m4_translation(position),
+	                            m4_scaling(vec3(cube_size / 2., cube_size / 2., cube_size / 2.)));
+	modelmatrix = m4_mul(modelmatrix, rotationmatrix);
+
+	glUniformMatrix4fv(modelLoc, 1, GL_FALSE, (float*)modelmatrix.m);
+	glDrawArrays(GL_TRIANGLES, 0, 36);
+}
+
+static float
+vec3_mag(XrVector3f* vec)
+{
+	return sqrt(vec->x * vec->x + vec->y * vec->y + vec->z * vec->z);
+}
+
+static XrVector3f
+vec3_norm(XrVector3f* vec)
+{
+	float mag = vec3_mag(vec);
+	XrVector3f r = {.x = vec->x / mag, .y = vec->y / mag, .z = vec->z / mag};
+	return r;
+}
+
+static void
+visualize_velocity(XrPosef* base,
+                   XrVector3f* linearVelocity,
+                   XrVector3f* angularVelocity,
+                   int modelLoc,
+                   float size)
+{
+	float cube_radius = size / 2;
+	float lin_len = vec3_mag(linearVelocity);
+	XrVector3f lin_direction = vec3_norm(linearVelocity);
+
+	for (float i = 0; i < lin_len / size; i++) {
+		XrVector3f pos = base->position;
+		pos.x += lin_direction.x * size * i;
+		pos.y += lin_direction.y * size * i;
+		pos.z += lin_direction.z * size * i;
+
+		XrQuaternionf identity = {.x = 0, .y = 0, .z = 0, .w = 1};
+
+		render_cube(&pos, &identity, cube_radius, modelLoc);
+	}
+}
+
 void
 render_frame(int w,
              int h,
@@ -317,39 +355,45 @@ render_frame(int w,
 	glClearColor(.0f, 0.0f, 0.2f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	double display_time_seconds = ((double)predictedDisplayTime) / (1000. * 1000. * 1000.);
-	const float rotations_per_sec = .25;
-	float rotation = ((long)(display_time_seconds * 360. * rotations_per_sec)) % 360;
-
-	float dist = 1.5f;
-	float height = 0.5f;
-	render_cube(vec3(0, height, -dist), .33f, rotation, viewmatrix.m, projectionmatrix.m);
-	render_cube(vec3(0, height, dist), .33f, rotation, viewmatrix.m, projectionmatrix.m);
-	render_cube(vec3(dist, height, 0), .33f, rotation, viewmatrix.m, projectionmatrix.m);
-	render_cube(vec3(-dist, height, 0), .33f, rotation, viewmatrix.m, projectionmatrix.m);
 
 	glUseProgram(shaderProgramID);
 	glBindVertexArray(VAOs[0]);
 
-	int color = glGetUniformLocation(shaderProgramID, "uniformColor");
-	// the color (0, 0, 0) will get replaced by some UV color in the shader
-	glUniform3f(color, 0.0, 0.0, 0.0);
-
+	int modelLoc = glGetUniformLocation(shaderProgramID, "model");
+	int colorLoc = glGetUniformLocation(shaderProgramID, "uniformColor");
 	int viewLoc = glGetUniformLocation(shaderProgramID, "view");
 	glUniformMatrix4fv(viewLoc, 1, GL_FALSE, (float*)viewmatrix.m);
 	int projLoc = glGetUniformLocation(shaderProgramID, "proj");
 	glUniformMatrix4fv(projLoc, 1, GL_FALSE, (float*)projectionmatrix.m);
 
-	int modelLoc = glGetUniformLocation(shaderProgramID, "model");
+
+	// render scene with 4 colorful cubes
+	{
+		// the special color value (0, 0, 0) will get replaced by some UV color in the shader
+		glUniform3f(colorLoc, 0.0, 0.0, 0.0);
+
+		double display_time_seconds = ((double)predictedDisplayTime) / (1000. * 1000. * 1000.);
+		const float rotations_per_sec = .25;
+		float angle = ((long)(display_time_seconds * 360. * rotations_per_sec)) % 360;
+
+		float dist = 1.5f;
+		float height = 0.5f;
+		render_rotated_cube(vec3(0, height, -dist), .33f, angle, projectionmatrix.m, modelLoc);
+		render_rotated_cube(vec3(0, height, dist), .33f, angle, projectionmatrix.m, modelLoc);
+		render_rotated_cube(vec3(dist, height, 0), .33f, angle, projectionmatrix.m, modelLoc);
+		render_rotated_cube(vec3(-dist, height, 0), .33f, angle, projectionmatrix.m, modelLoc);
+	}
+
+	// render controllers / hand joints
 	for (int hand = 0; hand < 2; hand++) {
 		if (hand == 0) {
-			glUniform3f(color, 1.0, 0.5, 0.5);
+			glUniform3f(colorLoc, 1.0, 0.5, 0.5);
 		} else {
-			glUniform3f(color, 0.5, 1.0, 0.5);
+			glUniform3f(colorLoc, 0.5, 1.0, 0.5);
 		}
 
-
-		bool joints_drawn = false;
+		// if at least some joints had valid poses, draw them instead of controller blocks
+		bool any_joints_valid = false;
 
 		if (joint_locations[hand].isActive) {
 			for (uint32_t i = 0; i < joint_locations[hand].jointCount; i++) {
@@ -360,37 +404,38 @@ render_frame(int w,
 				}
 
 				float size = joint_location->radius;
+				render_cube(&joint_location->pose.position, &joint_location->pose.orientation, size,
+				            modelLoc);
 
-				XrVector3f scale = {.x = size, .y = size, .z = size};
-				XrMatrix4x4f joint_matrix;
-				XrMatrix4x4f_CreateModelMatrix(&joint_matrix, &joint_location->pose.position,
-				                               &joint_location->pose.orientation, &scale);
-				glUniformMatrix4fv(modelLoc, 1, GL_FALSE, (float*)joint_matrix.m);
-				glDrawArrays(GL_TRIANGLES, 0, 36);
-				joints_drawn = true;
+				any_joints_valid = true;
 			}
 		}
 
 		// if hand tracking is not available or all joint poses were invalid,
 		// draw a block at the controller pose
-		if (!joint_locations[hand].isActive || !joints_drawn) {
+		if (!joint_locations[hand].isActive || !any_joints_valid) {
 
 			if (!hand_locations_valid[hand])
 				continue;
 
-			XrMatrix4x4f matrix;
 			XrVector3f scale = {.x = .05f, .y = .05f, .z = .2f};
-			XrMatrix4x4f_CreateModelMatrix(&matrix, &hand_locations[hand].pose.position,
-			                               &hand_locations[hand].pose.orientation, &scale);
-			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, (float*)matrix.m);
+			render_block(&hand_locations[hand].pose.position, &hand_locations[hand].pose.orientation,
+			             &scale, modelLoc);
+		}
 
-			glDrawArrays(GL_TRIANGLES, 0, 36);
-			continue;
+		if (hand_locations[hand].next != NULL) {
+			// we set .next only to null or XrSpaceVelocity in main
+			XrSpaceVelocity* vel = (XrSpaceVelocity*)hand_locations[hand].next;
+			if ((vel->velocityFlags & XR_SPACE_VELOCITY_LINEAR_VALID_BIT) != 0) {
+				visualize_velocity(&hand_locations[hand].pose, &vel->linearVelocity, &vel->angularVelocity,
+				                   modelLoc, 0.005);
+			}
 		}
 	}
 
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
+	// blit left eye to desktop window
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	if (view_index == 0) {
 		_glBlitNamedFramebuffer((GLuint)framebuffer,             // readFramebuffer
 		                        (GLuint)0,                       // backbuffer     // drawFramebuffer
