@@ -217,15 +217,16 @@ init_gl()
 	return 0;
 }
 
-void
-render_quad(int w,
-            int h,
-            int64_t swapchain_format,
-            XrSwapchainImageOpenGLKHR image,
-            XrTime predictedDisplayTime)
+static bool quad_texture_prepared = false;
+static GLuint quad_texture = 0;
+static GLuint quad_fbo = 0;
+
+void create_quad_texture(int w, int h, int64_t swapchain_format)
 {
+	glGenTextures (1, &quad_texture);
+
 	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, image.image);
+	glBindTexture(GL_TEXTURE_2D, quad_texture);
 
 	glViewport(0, 0, w, h);
 	glScissor(0, 0, w, h);
@@ -255,9 +256,36 @@ render_quad(int w,
 		}
 	}
 
-	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (GLsizei)w, (GLsizei)h, GL_RGBA, GL_UNSIGNED_BYTE,
-	                (GLvoid*)rgb);
+	// TODO respect format
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)w, (GLsizei)h, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+					(GLvoid*)rgb);
 	free(rgb);
+
+	glGenFramebuffers(1, &quad_fbo);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, quad_fbo);
+	glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, quad_texture, 0);
+
+	quad_texture_prepared = true;
+}
+
+void
+render_quad(int w,
+            int h,
+            int64_t swapchain_format,
+            XrSwapchainImageOpenGLKHR image,
+            XrTime predictedDisplayTime)
+{
+	if (!quad_texture_prepared) {
+		printf("Creating Quad texture\n");
+		create_quad_texture(w, h, swapchain_format);
+	}
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, quad_fbo);
+
+	glBindTexture(GL_TEXTURE_2D, image.image);
+	glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, w, h);
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 }
 
 static void
