@@ -1064,6 +1064,9 @@ main(int argc, char** argv)
 	}
 
 
+	// TODO: should not be necessary, but is for SteamVR 1.16.4 (but not 1.15.x)
+	glXMakeCurrent(graphics_binding_gl.xDisplay, graphics_binding_gl.glxDrawable,
+	               graphics_binding_gl.glxContext);
 
 	// Set up rendering (compile shaders, ...) before starting the session
 	if (init_gl(view_count, swapchain_lengths, &gl_rendering.framebuffers,
@@ -1339,6 +1342,10 @@ main(int argc, char** argv)
 
 			int w = viewconfig_views[i].recommendedImageRectWidth;
 			int h = viewconfig_views[i].recommendedImageRectHeight;
+
+			// TODO: should not be necessary, but is for SteamVR 1.16.4 (but not 1.15.x)
+			glXMakeCurrent(graphics_binding_gl.xDisplay, graphics_binding_gl.glxDrawable,
+			               graphics_binding_gl.glxContext);
 
 			render_frame(w, h, gl_rendering.shader_program_id, gl_rendering.VAO,
 			             frame_state.predictedDisplayTime, i, hand_locations, projection_matrix,
