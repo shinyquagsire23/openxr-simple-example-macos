@@ -1335,7 +1335,7 @@ main(int argc, char** argv)
 			projection_views[i].pose = views[i].pose;
 			projection_views[i].fov = views[i].fov;
 
-			GLuint depth_image = depth_images[i][depth_acquired_index].image;
+			GLuint depth_image = depth.supported ? depth_images[i][depth_acquired_index].image : 0;
 
 			int w = viewconfig_views[i].recommendedImageRectWidth;
 			int h = viewconfig_views[i].recommendedImageRectHeight;
