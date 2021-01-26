@@ -753,10 +753,12 @@ main(int argc, char** argv)
 	// a more sophisticated approach would iterate supported swapchain formats and choose from them
 	int64_t color_format = get_swapchain_format(instance, session, GL_SRGB8_ALPHA8_EXT, true);
 
-	// GL_DEPTH_COMPONENT32F is a good bet
-	int64_t depth_format = get_swapchain_format(instance, session, GL_DEPTH_COMPONENT32F, false);
+	// GL_DEPTH_COMPONENT16 is a good bet
+	// SteamVR 1.16.4 supports GL_DEPTH_COMPONENT16, GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT32
+	// but NOT GL_DEPTH_COMPONENT32F
+	int64_t depth_format = get_swapchain_format(instance, session, GL_DEPTH_COMPONENT16, false);
 	if (depth_format < 0) {
-		printf("Preferred depth format GL_DEPTH_COMPONENT32F not supported, disabling depth\n");
+		printf("Preferred depth format GL_DEPTH_COMPONENT16 not supported, disabling depth\n");
 		depth.supported = false;
 	}
 
