@@ -1383,7 +1383,12 @@ main(int argc, char** argv)
 		    (const XrCompositionLayerBaseHeader* const) & projection_layer};
 
 		if ((view_state.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT) == 0) {
-			printf("Not submitting layers because orientation is invalid\n");
+			printf("submitting 0 layers because orientation is invalid\n");
+			submitted_layer_count = 0;
+		}
+
+		if (!frame_state.shouldRender) {
+			printf("submitting 0 layers because shouldRender = false\n");
 			submitted_layer_count = 0;
 		}
 
