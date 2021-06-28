@@ -1077,15 +1077,6 @@ main(int argc, char** argv)
 		return 1;
 	}
 
-
-	// --- Begin session
-	XrSessionBeginInfo session_begin_info = {
-	    .type = XR_TYPE_SESSION_BEGIN_INFO, .next = NULL, .primaryViewConfigurationType = view_type};
-	result = xrBeginSession(session, &session_begin_info);
-	if (!xr_check(instance, result, "Failed to begin session!"))
-		return 1;
-	printf("Session started!\n");
-
 	XrSessionActionSetsAttachInfo actionset_attach_info = {
 	    .type = XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO,
 	    .next = NULL,
@@ -1095,10 +1086,11 @@ main(int argc, char** argv)
 	if (!xr_check(instance, result, "failed to attach action set"))
 		return 1;
 
-
-
 	XrSessionState state = XR_SESSION_STATE_UNKNOWN;
-	while (true) {
+
+	bool quit_renderloop = false;
+	bool session_running = false; // to avoid beginning an already running session
+	while (!quit_renderloop) {
 
 		// --- Poll SDL for events so we can exit with esc
 		SDL_Event sdl_event;
@@ -1110,7 +1102,8 @@ main(int argc, char** argv)
 			}
 		}
 
-		bool session_stopping = false;
+		// for several session states we want to skip the render loop
+		bool run_renderloop = false;
 
 		// --- Handle runtime Events
 		// we do this before xrWaitFrame() so we can go idle or
@@ -1124,21 +1117,92 @@ main(int argc, char** argv)
 			case XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING: {
 				XrEventDataInstanceLossPending* event = (XrEventDataInstanceLossPending*)&runtime_event;
 				printf("EVENT: instance loss pending at %lu! Destroying instance.\n", event->lossTime);
-				session_stopping = true;
-				break;
+				quit_renderloop = true;
+				continue;
 			}
 			case XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED: {
 				XrEventDataSessionStateChanged* event = (XrEventDataSessionStateChanged*)&runtime_event;
 				printf("EVENT: session state changed from %d to %d\n", state, event->state);
-
 				state = event->state;
 
-				if (event->state >= XR_SESSION_STATE_STOPPING) {
-					printf("Session is stopping...\n");
-					// still handle rest of the events instead of immediately quitting
-					session_stopping = true;
+				/*
+				 * react to session state changes, see OpenXR spec 9.3 diagram. What we need to react to:
+				 *
+				 * * READY -> xrBeginSession STOPPING -> xrEndSession (note that the same session can be restarted)
+				 * * EXITING -> xrDestroySession (EXITING only happens after we went through STOPPING and called xrEndSession)
+				 *
+				 * After exiting it is still possible to create a new session but we don't do that here.
+				 *
+				 * * IDLE -> don't run render loop, but keep polling for events
+				 * * SYNCHRONIZED, VISIBLE, FOCUSED -> run render loop
+				 */
+				switch (state) {
+				// skip render loop, keep polling
+				case XR_SESSION_STATE_MAX_ENUM: // must be a bug
+				case XR_SESSION_STATE_IDLE:
+				case XR_SESSION_STATE_UNKNOWN: {
+					run_renderloop = false;
+
+					break; // state handling switch
 				}
-				break;
+
+				// do nothing, run render loop normally
+				case XR_SESSION_STATE_FOCUSED:
+				case XR_SESSION_STATE_SYNCHRONIZED:
+				case XR_SESSION_STATE_VISIBLE: {
+					run_renderloop = true;
+
+					break; // state handling switch
+				}
+
+				// begin session and then run render loop
+				case XR_SESSION_STATE_READY: {
+					// start session only if it is not running, i.e. not when we already called xrBeginSession
+					// but the runtime did not switch to the next state yet
+					if (!session_running) {
+						XrSessionBeginInfo session_begin_info = {.type = XR_TYPE_SESSION_BEGIN_INFO,
+						                                         .next = NULL,
+						                                         .primaryViewConfigurationType = view_type};
+						result = xrBeginSession(session, &session_begin_info);
+						if (!xr_check(instance, result, "Failed to begin session!"))
+							return 1;
+						printf("Session started!\n");
+						session_running = true;
+					}
+					// after beginning the session, run render loop
+					run_renderloop = true;
+
+					break; // state handling switch
+				}
+
+				// end session, skip render loop, keep polling for next state change
+				case XR_SESSION_STATE_STOPPING: {
+					// end session only if it is running, i.e. not when we already called xrEndSession but the
+					// runtime did not switch to the next state yet
+					if (session_running) {
+						result = xrEndSession(session);
+						if (!xr_check(instance, result, "Failed to end session!"))
+							return 1;
+						session_running = false;
+					}
+					// after ending the session, don't run render loop
+					run_renderloop = false;
+
+					break; // state handling switch
+				}
+
+				// destroy session, skip render loop, exit render loop and quit
+				case XR_SESSION_STATE_LOSS_PENDING:
+				case XR_SESSION_STATE_EXITING:
+					result = xrDestroySession(session);
+					if (!xr_check(instance, result, "Failed to destroy session!"))
+						return 1;
+					quit_renderloop = true;
+					run_renderloop = false;
+
+					break; // state handling switch
+				}
+				break; // session event handling switch
 			}
 			case XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED: {
 				printf("EVENT: interaction profile changed!\n");
@@ -1178,10 +1242,10 @@ main(int argc, char** argv)
 			break;
 		}
 
-		if (session_stopping) {
-			printf("Quitting main render loop\n");
-			break;
+		if (!run_renderloop) {
+			continue;
 		}
+
 
 		// --- Wait for our turn to do head-pose dependent computation and render a frame
 		XrFrameState frame_state = {.type = XR_TYPE_FRAME_STATE, .next = NULL};
@@ -1404,11 +1468,7 @@ main(int argc, char** argv)
 	}
 
 
-
 	// --- Clean up after render loop quits
-
-	xrEndSession(session);
-	xrDestroySession(session);
 
 	for (uint32_t i = 0; i < view_count; i++) {
 		free(images[i]);
