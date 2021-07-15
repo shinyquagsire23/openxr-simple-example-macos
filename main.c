@@ -1090,6 +1090,7 @@ main(int argc, char** argv)
 
 	bool quit_renderloop = false;
 	bool session_running = false; // to avoid beginning an already running session
+	bool run_renderloop = false; // for some session states skip the render loop
 	while (!quit_renderloop) {
 
 		// --- Poll SDL for events so we can exit with esc
@@ -1102,8 +1103,6 @@ main(int argc, char** argv)
 			}
 		}
 
-		// for several session states we want to skip the render loop
-		bool run_renderloop = false;
 
 		// --- Handle runtime Events
 		// we do this before xrWaitFrame() so we can go idle or
