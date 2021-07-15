@@ -1088,10 +1088,10 @@ main(int argc, char** argv)
 
 	XrSessionState state = XR_SESSION_STATE_UNKNOWN;
 
-	bool quit_renderloop = false;
+	bool quit_mainloop = false;
 	bool session_running = false; // to avoid beginning an already running session
-	bool run_renderloop = false; // for some session states skip the render loop
-	while (!quit_renderloop) {
+	bool run_framecycle = false;  // for some session states skip the frame cycle
+	while (!quit_mainloop) {
 
 		// --- Poll SDL for events so we can exit with esc
 		SDL_Event sdl_event;
@@ -1116,7 +1116,7 @@ main(int argc, char** argv)
 			case XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING: {
 				XrEventDataInstanceLossPending* event = (XrEventDataInstanceLossPending*)&runtime_event;
 				printf("EVENT: instance loss pending at %lu! Destroying instance.\n", event->lossTime);
-				quit_renderloop = true;
+				quit_mainloop = true;
 				continue;
 			}
 			case XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED: {
@@ -1140,7 +1140,7 @@ main(int argc, char** argv)
 				case XR_SESSION_STATE_MAX_ENUM: // must be a bug
 				case XR_SESSION_STATE_IDLE:
 				case XR_SESSION_STATE_UNKNOWN: {
-					run_renderloop = false;
+					run_framecycle = false;
 
 					break; // state handling switch
 				}
@@ -1149,7 +1149,7 @@ main(int argc, char** argv)
 				case XR_SESSION_STATE_FOCUSED:
 				case XR_SESSION_STATE_SYNCHRONIZED:
 				case XR_SESSION_STATE_VISIBLE: {
-					run_renderloop = true;
+					run_framecycle = true;
 
 					break; // state handling switch
 				}
@@ -1169,7 +1169,7 @@ main(int argc, char** argv)
 						session_running = true;
 					}
 					// after beginning the session, run render loop
-					run_renderloop = true;
+					run_framecycle = true;
 
 					break; // state handling switch
 				}
@@ -1185,7 +1185,7 @@ main(int argc, char** argv)
 						session_running = false;
 					}
 					// after ending the session, don't run render loop
-					run_renderloop = false;
+					run_framecycle = false;
 
 					break; // state handling switch
 				}
@@ -1196,8 +1196,8 @@ main(int argc, char** argv)
 					result = xrDestroySession(session);
 					if (!xr_check(instance, result, "Failed to destroy session!"))
 						return 1;
-					quit_renderloop = true;
-					run_renderloop = false;
+					quit_mainloop = true;
+					run_framecycle = false;
 
 					break; // state handling switch
 				}
@@ -1241,7 +1241,7 @@ main(int argc, char** argv)
 			break;
 		}
 
-		if (!run_renderloop) {
+		if (!run_framecycle) {
 			continue;
 		}
 
