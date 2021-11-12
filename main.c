@@ -360,7 +360,8 @@ xr_check(XrInstance instance, XrResult result, const char* format, ...)
 	xrResultToString(instance, result, resultString);
 
 	char formatRes[XR_MAX_RESULT_STRING_SIZE + 1024];
-	snprintf(formatRes, XR_MAX_RESULT_STRING_SIZE + 1023, "%s [%s]\n", format, resultString);
+	snprintf(formatRes, XR_MAX_RESULT_STRING_SIZE + 1023, "%s [%s] (%d)\n", format, resultString,
+	         result);
 
 	va_list args;
 	va_start(args, format);
@@ -464,6 +465,35 @@ get_swapchain_format(XrInstance instance,
 }
 
 
+static void
+print_api_layers()
+{
+	uint32_t count = 0;
+	XrResult result = xrEnumerateApiLayerProperties(0, &count, NULL);
+	if (!xr_check(NULL, result, "Failed to enumerate api layer count"))
+		return;
+
+	if (count == 0)
+		return;
+
+	XrApiLayerProperties* props = malloc(count * sizeof(XrApiLayerProperties));
+	for (uint32_t i = 0; i < count; i++) {
+		props[i].type = XR_TYPE_API_LAYER_PROPERTIES;
+		props[i].next = NULL;
+	}
+
+	result = xrEnumerateApiLayerProperties(count, &count, props);
+	if (!xr_check(NULL, result, "Failed to enumerate api layers"))
+		return;
+
+	printf("API layers:\n");
+	for (uint32_t i = 0; i < count; i++) {
+		printf("\t%s v%d: %s\n", props[i].layerName, props[i].layerVersion, props[i].description);
+	}
+
+	free(props);
+}
+
 
 // functions belonging to extensions must be loaded with xrGetInstanceProcAddr before use
 static PFN_xrGetOpenGLGraphicsRequirementsKHR pfnGetOpenGLGraphicsRequirementsKHR = NULL;
@@ -556,6 +586,8 @@ main(int argc, char** argv)
 
 	// reuse this variable for all our OpenXR return codes
 	XrResult result = XR_SUCCESS;
+
+	print_api_layers();
 
 	// xrEnumerate*() functions are usually called once with CapacityInput = 0.
 	// The function will write the required amount into CountOutput. We then have
