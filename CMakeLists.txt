@@ -37,7 +37,7 @@ else()
 endif()
 
 target_link_libraries(openxr-example PRIVATE Xrandr ${X11_LIBRARIES} ${OPENGL_LIBRARIES} ${SDL2_LIBRARIES} m)
-target_include_directories(openxr-example PRIVATE ${SDL2_INCLUDE_DIR})
+target_include_directories(openxr-example PRIVATE ${SDL2_INCLUDE_DIRS})
 
 if(MSVC)
   target_compile_options(openxr-example PRIVATE /W4 /WX)
