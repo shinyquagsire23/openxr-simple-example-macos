@@ -27,11 +27,27 @@
 #include "openxr_headers/openxr_platform.h"
 
 #else
-#error Only Linux/XLib supported for now
+// Required headers for OpenGL rendering, as well as for including openxr_platform
+#define GL_GLEXT_PROTOTYPES
+#define GL3_PROTOTYPES
+#include <GL/glew.h>
+//#include <GL/gl.h>
+//#include <GL/glext.h>
+
+typedef void* Display;
+typedef void* GLXFBConfig;
+typedef void* GLXDrawable;
+typedef void* GLXContext;
+
+#define XR_USE_PLATFORM_XLIB
+#define XR_USE_GRAPHICS_API_OPENGL
+#include "openxr_headers/openxr.h"
+#include "openxr_headers/openxr_platform.h"
+
 #endif
 
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_events.h>
+#include <SDL.h>
+#include <SDL_events.h>
 
 #define degrees_to_radians(angle_degrees) ((angle_degrees)*M_PI / 180.0)
 #define radians_to_degrees(angle_radians) ((angle_radians)*180.0 / M_PI)
@@ -43,6 +59,8 @@ static XrPosef identity_pose = {.orientation = {.x = 0, .y = 0, .z = 0, .w = 1.0
 #define HAND_LEFT_INDEX 0
 #define HAND_RIGHT_INDEX 1
 #define HAND_COUNT 2
+
+//#define HEADLESS
 
 
 
@@ -313,13 +331,9 @@ XrMatrix4x4f_CreateModelMatrix(XrMatrix4x4f* result,
 // =============================================================================
 // OpenGL rendering code at the end of the file
 // =============================================================================
-#ifdef __linux__
 bool
-init_sdl_window(Display** xDisplay,
-                uint32_t* visualid,
-                GLXFBConfig* glxFBConfig,
-                GLXDrawable* glxDrawable,
-                GLXContext* glxContext,
+init_sdl_window(SDL_Window** ppSdlWindow,
+                SDL_GLContext* pSdlContext,
                 int w,
                 int h);
 
@@ -344,7 +358,6 @@ render_frame(int w,
              GLuint image,
              bool depth_supported,
              GLuint depthbuffer);
-#endif
 // =============================================================================
 
 
@@ -530,7 +543,7 @@ main(int argc, char** argv)
 	XrSession session = XR_NULL_HANDLE;
 
 	// each graphics API requires the use of a specialized struct
-	XrGraphicsBindingOpenGLXlibKHR graphics_binding_gl;
+	XrGraphicsBindingOpenGLSDLEXT graphics_binding_gl;
 
 	// each physical Display/Eye is described by a view.
 	// view_count usually depends on the form_factor / view_type.
@@ -636,8 +649,12 @@ main(int argc, char** argv)
 
 
 	// --- Create XrInstance
+#ifndef HEADLESS
 	int enabled_ext_count = 1;
-	const char* enabled_exts[1] = {XR_KHR_OPENGL_ENABLE_EXTENSION_NAME};
+#else
+	int enabled_ext_count = 2;
+#endif
+	const char* enabled_exts[2] = {XR_KHR_OPENGL_ENABLE_EXTENSION_NAME, XR_MND_HEADLESS_EXTENSION_NAME};
 	// same can be done for API layers, but API layers can also be enabled by env var
 
 	XrInstanceCreateInfo instance_create_info = {
@@ -729,14 +746,12 @@ main(int argc, char** argv)
 
 
 	// --- Create session
-	graphics_binding_gl = (XrGraphicsBindingOpenGLXlibKHR){
-	    .type = XR_TYPE_GRAPHICS_BINDING_OPENGL_XLIB_KHR,
+	graphics_binding_gl = (XrGraphicsBindingOpenGLSDLEXT){
+	    .type = XR_TYPE_GRAPHICS_BINDING_OPENGL_SDL_EXT,
 	};
 
 	// create SDL window the size of the left eye & fill GL graphics binding info
-	if (!init_sdl_window(&graphics_binding_gl.xDisplay, &graphics_binding_gl.visualid,
-	                     &graphics_binding_gl.glxFBConfig, &graphics_binding_gl.glxDrawable,
-	                     &graphics_binding_gl.glxContext,
+	if (!init_sdl_window(&graphics_binding_gl.sdlWindow, &graphics_binding_gl.sdlContext,
 	                     viewconfig_views[0].recommendedImageRectWidth,
 	                     viewconfig_views[0].recommendedImageRectHeight)) {
 		printf("GLX init failed!\n");
@@ -768,6 +783,7 @@ main(int argc, char** argv)
 	if (!xr_check(instance, result, "Failed to create play space!"))
 		return 1;
 
+#ifndef HEADLESS
 	// --- Create Swapchains
 	uint32_t swapchain_format_count;
 	result = xrEnumerateSwapchainFormats(session, 0, &swapchain_format_count, NULL);
@@ -793,7 +809,6 @@ main(int argc, char** argv)
 		printf("Preferred depth format GL_DEPTH_COMPONENT16 not supported, disabling depth\n");
 		depth.supported = false;
 	}
-
 
 	// --- Create swapchain for main VR rendering
 	{
@@ -883,6 +898,36 @@ main(int argc, char** argv)
 			}
 		}
 	}
+#else
+	swapchains = malloc(sizeof(XrSwapchain) * view_count);
+	swapchain_lengths = malloc(sizeof(uint32_t) * view_count);
+	images = malloc(sizeof(XrSwapchainImageOpenGLKHR*) * view_count);
+
+	depth_swapchains = malloc(sizeof(XrSwapchain) * view_count);
+	depth_swapchain_lengths = malloc(sizeof(uint32_t) * view_count);
+	depth_images = malloc(sizeof(XrSwapchainImageOpenGLKHR*) * view_count);
+
+	memset(swapchains, 0, sizeof(XrSwapchain) * view_count);
+	memset(depth_swapchains, 0, sizeof(XrSwapchain) * view_count);
+
+	for (uint32_t i = 0; i < view_count; i++) {
+		images[i] = malloc(sizeof(XrSwapchainImageOpenGLKHR) * depth_swapchain_lengths[i]);
+		depth_images[i] = malloc(sizeof(XrSwapchainImageOpenGLKHR) * depth_swapchain_lengths[i]);
+
+		swapchain_lengths[i] = 1;
+		depth_swapchain_lengths[i] = 1;
+
+		for (uint32_t j = 0; j < swapchain_lengths[i]; j++) {
+			images[i][j].type = XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR;
+			images[i][j].next = NULL;
+		}
+
+		for (uint32_t j = 0; j < depth_swapchain_lengths[i]; j++) {
+			depth_images[i][j].type = XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR;
+			depth_images[i][j].next = NULL;
+		}
+	}
+#endif
 
 
 	// Do not allocate these every frame to save some resources
@@ -909,6 +954,7 @@ main(int argc, char** argv)
 
 		// projection_views[i].{pose, fov} have to be filled every frame in frame loop
 	};
+	printf ("wat\n");
 
 
 	if (depth.supported) {
@@ -1099,8 +1145,8 @@ main(int argc, char** argv)
 
 
 	// TODO: should not be necessary, but is for SteamVR 1.16.4 (but not 1.15.x)
-	glXMakeCurrent(graphics_binding_gl.xDisplay, graphics_binding_gl.glxDrawable,
-	               graphics_binding_gl.glxContext);
+	//glXMakeCurrent(graphics_binding_gl.xDisplay, graphics_binding_gl.glxDrawable,
+	 //              graphics_binding_gl.glxContext);
 
 	// Set up rendering (compile shaders, ...) before starting the session
 	if (init_gl(view_count, swapchain_lengths, &gl_rendering.framebuffers,
@@ -1281,10 +1327,11 @@ main(int argc, char** argv)
 		// --- Wait for our turn to do head-pose dependent computation and render a frame
 		XrFrameState frame_state = {.type = XR_TYPE_FRAME_STATE, .next = NULL};
 		XrFrameWaitInfo frame_wait_info = {.type = XR_TYPE_FRAME_WAIT_INFO, .next = NULL};
+//#ifndef HEADLESS
 		result = xrWaitFrame(session, &frame_wait_info, &frame_state);
 		if (!xr_check(instance, result, "xrWaitFrame() was not successful, exiting..."))
 			break;
-
+//#endif
 
 
 		// --- Create projection matrices and view matrices for each eye
@@ -1327,7 +1374,7 @@ main(int argc, char** argv)
 				result = xrGetActionStatePose(session, &get_info, &hand_pose_state);
 				xr_check(instance, result, "failed to get pose value!");
 			}
-			// printf("Hand pose %d active: %d\n", i, poseState.isActive);
+			//printf("Hand pose %d active: %d\n", i, hand_pose_state.isActive);
 
 			hand_locations[i].type = XR_TYPE_SPACE_LOCATION;
 			hand_locations[i].next = NULL;
@@ -1336,14 +1383,14 @@ main(int argc, char** argv)
 			                       &hand_locations[i]);
 			xr_check(instance, result, "failed to locate space %d!", i);
 
-			/*
-			printf("Pose %d valid %d: %f %f %f %f, %f %f %f\n", i,
-			spaceLocationValid[i], spaceLocation[0].pose.orientation.x,
-			spaceLocation[0].pose.orientation.y, spaceLocation[0].pose.orientation.z,
-			spaceLocation[0].pose.orientation.w, spaceLocation[0].pose.position.x,
-			spaceLocation[0].pose.position.y, spaceLocation[0].pose.position.z
-			);
-			*/
+			
+			/*printf("Pose %d valid %d: %f %f %f %f, %f %f %f\n", i,
+			1, hand_locations[i].pose.orientation.x,
+			hand_locations[i].pose.orientation.y, hand_locations[i].pose.orientation.z,
+			hand_locations[i].pose.orientation.w, hand_locations[i].pose.position.x,
+			hand_locations[i].pose.position.y, hand_locations[i].pose.position.z
+			);*/
+			
 
 			grab_value[i].type = XR_TYPE_ACTION_STATE_FLOAT;
 			grab_value[i].next = NULL;
@@ -1382,10 +1429,11 @@ main(int argc, char** argv)
 		// --- Begin frame
 		XrFrameBeginInfo frame_begin_info = {.type = XR_TYPE_FRAME_BEGIN_INFO, .next = NULL};
 
+#ifndef HEADLESS
 		result = xrBeginFrame(session, &frame_begin_info);
 		if (!xr_check(instance, result, "failed to begin frame!"))
 			break;
-
+#endif
 
 		// render each eye and fill projection_views with the result
 		for (uint32_t i = 0; i < view_count; i++) {
@@ -1403,6 +1451,7 @@ main(int argc, char** argv)
 			XrMatrix4x4f_CreateViewMatrix(&view_matrix, &views[i].pose.position,
 			                              &views[i].pose.orientation);
 
+#ifndef HEADLESS
 			XrSwapchainImageAcquireInfo acquire_info = {.type = XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO,
 			                                            .next = NULL};
 			uint32_t acquired_index;
@@ -1431,24 +1480,28 @@ main(int argc, char** argv)
 				if (!xr_check(instance, result, "failed to wait for swapchain image!"))
 					break;
 			}
-
+#else
+			uint32_t acquired_index = 0;
+			uint32_t depth_acquired_index = 0;
+#endif
 			projection_views[i].pose = views[i].pose;
 			projection_views[i].fov = views[i].fov;
 
-			GLuint depth_image = depth.supported ? depth_images[i][depth_acquired_index].image : 0;
+			GLuint depth_image = 0;//depth.supported ? depth_images[i][depth_acquired_index].image : 0;
 
 			int w = viewconfig_views[i].recommendedImageRectWidth;
 			int h = viewconfig_views[i].recommendedImageRectHeight;
 
 			// TODO: should not be necessary, but is for SteamVR 1.16.4 (but not 1.15.x)
-			glXMakeCurrent(graphics_binding_gl.xDisplay, graphics_binding_gl.glxDrawable,
-			               graphics_binding_gl.glxContext);
+			//glXMakeCurrent(graphics_binding_gl.xDisplay, graphics_binding_gl.glxDrawable,
+			//               graphics_binding_gl.glxContext);
 
 			render_frame(w, h, gl_rendering.shader_program_id, gl_rendering.VAO,
 			             frame_state.predictedDisplayTime, i, hand_locations, projection_matrix,
 			             view_matrix, gl_rendering.framebuffers[i][acquired_index],
 			             images[i][acquired_index].image, depth.supported, depth_image);
 
+#ifndef HEADLESS
 			XrSwapchainImageReleaseInfo release_info = {.type = XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO,
 			                                            .next = NULL};
 			result = xrReleaseSwapchainImage(swapchains[i], &release_info);
@@ -1462,6 +1515,7 @@ main(int argc, char** argv)
 				if (!xr_check(instance, result, "failed to release swapchain image!"))
 					break;
 			}
+#endif
 		}
 
 		XrCompositionLayerProjection projection_layer = {
@@ -1493,9 +1547,11 @@ main(int argc, char** argv)
 		                               .layers = submitted_layers,
 		                               .environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE,
 		                               .next = NULL};
+#ifndef HEADLESS
 		result = xrEndFrame(session, &frameEndInfo);
 		if (!xr_check(instance, result, "failed to end frame!"))
 			break;
+#endif
 	}
 
 
@@ -1557,13 +1613,9 @@ MessageCallback(GLenum source,
 }
 
 
-#ifdef __linux__
 bool
-init_sdl_window(Display** xDisplay,
-                uint32_t* visualid,
-                GLXFBConfig* glxFBConfig,
-                GLXDrawable* glxDrawable,
-                GLXContext* glxContext,
+init_sdl_window(SDL_Window** ppSdlWindow,
+                SDL_GLContext* pSdlContext,
                 int w,
                 int h)
 {
@@ -1590,21 +1642,24 @@ init_sdl_window(Display** xDisplay,
 	}
 
 	gl_context = SDL_GL_CreateContext(desktop_window);
+	*ppSdlWindow = desktop_window;
+	*pSdlContext = gl_context;
+	glewInit();
 
-	glEnable(GL_DEBUG_OUTPUT);
-	glDebugMessageCallback(MessageCallback, 0);
+	//glEnable(GL_DEBUG_OUTPUT);
+	//glDebugMessageCallback(MessageCallback, 0);
 
 	SDL_GL_SetSwapInterval(0);
 
-	_glBlitNamedFramebuffer =
-	    (PFNGLBLITNAMEDFRAMEBUFFERPROC)glXGetProcAddressARB((GLubyte*)"glBlitNamedFramebuffer");
+	//_glBlitNamedFramebuffer =
+	//    (PFNGLBLITNAMEDFRAMEBUFFERPROC)glXGetProcAddressARB((GLubyte*)"glBlitNamedFramebuffer");
 
 	// HACK? OpenXR wants us to report these values, so "work around" SDL a
 	// bit and get the underlying glx stuff. Does this still work when e.g.
 	// SDL switches to xcb?
-	*xDisplay = XOpenDisplay(NULL);
-	*glxContext = glXGetCurrentContext();
-	*glxDrawable = glXGetCurrentDrawable();
+	//*xDisplay = XOpenDisplay(NULL);
+	//*glxContext = glXGetCurrentContext();
+	//*glxDrawable = glXGetCurrentDrawable();
 
 	return true;
 }
@@ -1612,12 +1667,11 @@ init_sdl_window(Display** xDisplay,
 
 static const char* vertexshader =
     "#version 330 core\n"
-    "#extension GL_ARB_explicit_uniform_location : require\n"
-    "layout(location = 0) in vec3 aPos;\n"
-    "layout(location = 2) uniform mat4 model;\n"
-    "layout(location = 3) uniform mat4 view;\n"
-    "layout(location = 4) uniform mat4 proj;\n"
-    "layout(location = 5) in vec2 aColor;\n"
+    "in vec3 aPos;\n"
+    "uniform mat4 model;\n"
+    "uniform mat4 view;\n"
+    "uniform mat4 proj;\n"
+    "in vec2 aColor;\n"
     "out vec2 vertexColor;\n"
     "void main() {\n"
     "	gl_Position = proj * view * model * vec4(aPos.x, aPos.y, aPos.z, "
@@ -1627,9 +1681,8 @@ static const char* vertexshader =
 
 static const char* fragmentshader =
     "#version 330 core\n"
-    "#extension GL_ARB_explicit_uniform_location : require\n"
-    "layout(location = 0) out vec4 FragColor;\n"
-    "layout(location = 1) uniform vec3 uniformColor;\n"
+    "out vec4 FragColor;\n"
+    "uniform vec3 uniformColor;\n"
     "in vec2 vertexColor;\n"
     "void main() {\n"
     "	FragColor = (uniformColor.x < 0.01 && uniformColor.y < 0.01 && "
@@ -1647,6 +1700,7 @@ init_gl(uint32_t view_count,
         GLuint* VAO)
 {
 
+//#ifndef HEADLESS
 	/* Allocate resources that we use for our own rendering.
 	 * We will bind framebuffers to the runtime provided textures for rendering.
 	 * For this, we create one framebuffer per OpenGL texture.
@@ -1657,6 +1711,7 @@ init_gl(uint32_t view_count,
 		(*framebuffers)[i] = malloc(sizeof(GLuint) * swapchain_lengths[i]);
 		glGenFramebuffers(swapchain_lengths[i], (*framebuffers)[i]);
 	}
+//#endif
 
 	GLuint vertex_shader_id = glCreateShader(GL_VERTEX_SHADER);
 	const GLchar* vertex_shader_source[1];
@@ -1790,7 +1845,7 @@ render_frame(int w,
              bool depth_supported,
              GLuint depthbuffer)
 {
-	glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+	/*glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
 
 	glViewport(0, 0, w, h);
 	glScissor(0, 0, w, h);
@@ -1800,7 +1855,7 @@ render_frame(int w,
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthbuffer, 0);
 	} else {
 		// TODO: need a depth attachment for depth test when rendering to fbo
-	}
+	}*/
 
 	glClearColor(.0f, 0.0f, 0.2f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -1855,11 +1910,10 @@ render_frame(int w,
 		             &scale, modelLoc);
 	}
 
-
 	// blit left eye to desktop window
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	if (view_index == 0) {
-		_glBlitNamedFramebuffer((GLuint)framebuffer,             // readFramebuffer
+		/*_glBlitNamedFramebuffer((GLuint)framebuffer,             // readFramebuffer
 		                        (GLuint)0,                       // backbuffer     // drawFramebuffer
 		                        (GLint)0,                        // srcX0
 		                        (GLint)0,                        // srcY0
@@ -1871,9 +1925,8 @@ render_frame(int w,
 		                        (GLint)h / 2,                    // dstY1
 		                        (GLbitfield)GL_COLOR_BUFFER_BIT, // mask
 		                        (GLenum)GL_LINEAR);              // filter
+		                      */
 
 		SDL_GL_SwapWindow(desktop_window);
 	}
 }
-
-#endif
