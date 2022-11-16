@@ -1,23 +1,15 @@
-// Copyright (c) 2017 The Khronos Group Inc.
+// Copyright (c) 2017-2022, The Khronos Group Inc.
 // Copyright (c) 2017 Valve Corporation
 // Copyright (c) 2017 LunarG, Inc.
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+// SPDX-License-Identifier: Apache-2.0 OR MIT
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// Author: Mark Young <marky@lunarg.com>
+// Initial Author: Mark Young <marky@lunarg.com>
 //
 
 #pragma once
+
+#include <openxr/openxr.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -56,8 +48,8 @@ typedef struct XrNegotiateLoaderInfo {
     size_t structSize;                    // sizeof(XrNegotiateLoaderInfo)
     uint32_t minInterfaceVersion;
     uint32_t maxInterfaceVersion;
-    uint32_t minXrVersion;
-    uint32_t maxXrVersion;
+    XrVersion minApiVersion;
+    XrVersion maxApiVersion;
 } XrNegotiateLoaderInfo;
 
 #define XR_API_LAYER_INFO_STRUCT_VERSION 1
@@ -66,7 +58,7 @@ typedef struct XrNegotiateApiLayerRequest {
     uint32_t structVersion;               // XR_API_LAYER_INFO_STRUCT_VERSION
     size_t structSize;                    // sizeof(XrNegotiateApiLayerRequest)
     uint32_t layerInterfaceVersion;       // CURRENT_LOADER_API_LAYER_VERSION
-    uint32_t layerXrVersion;
+    XrVersion layerApiVersion;
     PFN_xrGetInstanceProcAddr getInstanceProcAddr;
     PFN_xrCreateApiLayerInstance createApiLayerInstance;
 } XrNegotiateApiLayerRequest;
@@ -77,7 +69,7 @@ typedef struct XrNegotiateRuntimeRequest {
     uint32_t structVersion;               // XR_RUNTIME_INFO_STRUCT_VERSION
     size_t structSize;                    // sizeof(XrNegotiateRuntimeRequest)
     uint32_t runtimeInterfaceVersion;     // CURRENT_LOADER_RUNTIME_VERSION
-    uint32_t runtimeXrVersion;
+    XrVersion runtimeApiVersion;
     PFN_xrGetInstanceProcAddr getInstanceProcAddr;
 } XrNegotiateRuntimeRequest;
 
